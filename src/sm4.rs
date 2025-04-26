@@ -252,7 +252,7 @@ pub struct CryptSM4ECB<'a> {
 
 impl<'a> CryptSM4ECB<'a> {
     pub fn new(key: &'a [u8]) -> Self {
-        CryptSM4ECB{key: key}
+        CryptSM4ECB{key }
     }
 
     pub fn encrypt_ecb(&self, input_data: &[u8]) -> Vec<u8> {
@@ -295,7 +295,7 @@ pub struct CryptSM4CBC<'a> {
 
 impl<'a> CryptSM4CBC<'a> {
     pub fn new(key: &'a [u8], iv: &'a [u8]) -> Self {
-        CryptSM4CBC{key: key, iv: iv}
+        CryptSM4CBC{key, iv }
     }
 
     pub fn encrypt_cbc(&self, input_data: &[u8]) -> Vec<u8> {
