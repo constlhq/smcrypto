@@ -1,13 +1,13 @@
 use crate::sm3::{sm3_hash, sm3_hash_raw};
-use std::vec;
 use num_bigint::BigUint;
-use num_traits::*;
 use num_integer::*;
-use rand::seq::SliceRandom;
-use std::process::Command;
-use std::path::Path;
-use std::fs;
+use num_traits::*;
+use rand::seq::{IteratorRandom, SliceRandom};
 use std::borrow::Cow;
+use std::fs;
+use std::path::Path;
+use std::process::Command;
+use std::vec;
 
 static PARA_LEN: usize = 64;
 const ECC_N: &'static str = "fffffffeffffffffffffffffffffffff7203df6b21c6052b53bbf40939d54123";
@@ -41,12 +41,12 @@ fn sub_mod(a: &BigUint, b: &BigUint, ecc_p: &BigUint) -> BigUint {
 }
 
 fn random_hex(x: usize) -> String {
-    let c = vec!["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"];
-    let mut s: String = "".to_string();
-    for _ in 0..x {
-        s += *c.choose(&mut rand::thread_rng()).unwrap();
-    }
-    s
+    let c = "0123456789abcdef";
+    let mut thread_rng = rand::thread_rng();
+    let rand_hex_chars = c
+        .chars()
+        .choose_multiple(&mut thread_rng, x);
+    String::from_iter(rand_hex_chars)
 }
 
 fn append_zero(data: &[u8], size: usize) -> Vec<u8> {
@@ -262,7 +262,12 @@ pub fn pk_valid(public_key: &str) -> bool {
     let a = BigUint::from_str_radix(ECC_A, 16).unwrap();
     let b = BigUint::from_str_radix(ECC_B, 16).unwrap();
     let p = BigUint::from_str_radix(ECC_P, 16).unwrap();
-    let np0 = kg(BigUint::from_str_radix(ECC_N, 16).unwrap(), &public_key) == Point { x: BigUint::zero(), y: BigUint::zero(), z: BigUint::zero() };
+    let np0 = kg(BigUint::from_str_radix(ECC_N, 16).unwrap(), &public_key)
+        == Point {
+            x: BigUint::zero(),
+            y: BigUint::zero(),
+            z: BigUint::zero(),
+        };
     let on_curve = (&y * &y) % &p == (&x * &x * &x + &a * &x + &b) % &p;
     np0 && on_curve
 }
@@ -270,13 +275,16 @@ pub fn pk_valid(public_key: &str) -> bool {
 /// Check whether a hex string is legal.
 pub fn hex_valid(input: &str) -> bool {
     let hex_chars: Vec<char> = vec![
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-        'a', 'b', 'c', 'd', 'e', 'f',
-        'A', 'B', 'C', 'D', 'E', 'F',
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 'A', 'B',
+        'C', 'D', 'E', 'F',
     ];
     let input_chars: Vec<char> = input.chars().collect();
     let is_even = input_chars.len() % 2 == 0;
-    let all_in_hex = input_chars.iter().map(|x| hex_chars.contains(&x)).into_iter().all(|x| x);
+    let all_in_hex = input_chars
+        .iter()
+        .map(|x| hex_chars.contains(&x))
+        .into_iter()
+        .all(|x| x);
     is_even && all_in_hex
 }
 
@@ -349,10 +357,21 @@ pub fn pubkey_from_pem_file(pem_file: &str) -> String {
 
 fn keypair_to_pem_bytes(private_key: &str) -> Vec<u8> {
     let public_key = pk_from_sk(private_key);
-    let pem = "308187020100301306072a8648ce3d020106082a811ccf5501822d046d306b0201010420".to_string() + private_key + "a14403420004" + &public_key;
+    let pem = "308187020100301306072a8648ce3d020106082a811ccf5501822d046d306b0201010420"
+        .to_string()
+        + private_key
+        + "a14403420004"
+        + &public_key;
     let pem = hex::decode(pem).unwrap();
     let pem = base64::encode(pem);
-    let pem = "-----BEGIN PRIVATE KEY-----".to_string() + "\n" + &pem[0..64] + "\n" + &pem[64..128] + "\n" + &pem[128..] + "\n-----END PRIVATE KEY-----\n";
+    let pem = "-----BEGIN PRIVATE KEY-----".to_string()
+        + "\n"
+        + &pem[0..64]
+        + "\n"
+        + &pem[64..128]
+        + "\n"
+        + &pem[128..]
+        + "\n-----END PRIVATE KEY-----\n";
     pem.into_bytes()
 }
 
@@ -369,7 +388,12 @@ fn pubkey_to_pem_bytes(public_key: &str) -> Vec<u8> {
     let pem = "3059301306072a8648ce3d020106082a811ccf5501822d03420004".to_string() + &public_key;
     let pem = hex::decode(pem).unwrap();
     let pem = base64::encode(pem);
-    let pem = "-----BEGIN PUBLIC KEY-----".to_string() + "\n" + &pem[0..64] + "\n" + &pem[64..] + "\n-----END PUBLIC KEY-----\n";
+    let pem = "-----BEGIN PUBLIC KEY-----".to_string()
+        + "\n"
+        + &pem[0..64]
+        + "\n"
+        + &pem[64..]
+        + "\n-----END PUBLIC KEY-----\n";
     pem.into_bytes()
 }
 
@@ -418,7 +442,10 @@ fn sign_raw(data: &[u8], private_key: &str) -> Vec<u8> {
     if r == BigUint::zero() || &r + &k1 == BigUint::from_str_radix(ECC_N, 16).unwrap() {
         vec![]
     } else {
-        let d_1: BigUint = (&d + BigUint::one()).modpow(&(BigUint::from_str_radix(ECC_N, 16).unwrap() - BigUint::new(vec![2])), &BigUint::from_str_radix(ECC_N, 16).unwrap());
+        let d_1: BigUint = (&d + BigUint::one()).modpow(
+            &(BigUint::from_str_radix(ECC_N, 16).unwrap() - BigUint::new(vec![2])),
+            &BigUint::from_str_radix(ECC_N, 16).unwrap(),
+        );
         let s: BigUint = (&d_1 * (&k1 + &r) - &r) % BigUint::from_str_radix(ECC_N, 16).unwrap();
         if s == BigUint::zero() {
             vec![]
@@ -499,6 +526,8 @@ fn verify_from_file(id: &[u8], data: &[u8], sign_file: &str, public_key: &str) -
 }
 
 fn encrypt(data: &[u8], public_key: &str) -> Vec<u8> {
+    // let k = BigUint::from_bytes_be(&[1; 8]);
+    // let c1xyz = kg(k.clone(), ECC_G);
     let k = random_hex(PARA_LEN);
     let c1xyz = kg(BigUint::from_str_radix(k.as_str(), 16).unwrap(), ECC_G);
     let c1x = append_zero(&BigUint::to_bytes_be(&c1xyz.x), PARA_LEN / 2);
@@ -529,7 +558,10 @@ fn encrypt(data: &[u8], public_key: &str) -> Vec<u8> {
 fn decrypt(data: &[u8], private_key: &str) -> Vec<u8> {
     let c1 = &data[0..64];
     let c2 = &data[96..];
-    let xy = kg(BigUint::from_str_radix(private_key, 16).unwrap(), &hex::encode(c1));
+    let xy = kg(
+        BigUint::from_str_radix(private_key, 16).unwrap(),
+        &hex::encode(c1),
+    );
     let x = append_zero(&BigUint::to_bytes_be(&xy.x), 32);
     let y = append_zero(&BigUint::to_bytes_be(&xy.y), 32);
     let xy = concat_vec(&x, &y);
@@ -583,7 +615,8 @@ fn decrypt_asna1(data: &[u8], private_key: &str) -> Vec<u8> {
             let secret = reader.next().read_bytes()?;
             return Ok((x, y, sm3, secret));
         })
-    }).unwrap();
+    })
+    .unwrap();
     let x = BigUint::to_bytes_be(&x);
     let y = BigUint::to_bytes_be(&y);
     let x = append_zero(&x, 32);
@@ -626,7 +659,11 @@ fn decrypt_from_file(enc_file: &str, private_key: &str) -> Vec<u8> {
 }
 
 fn kexhat(x: BigUint) -> BigUint {
-    let w_2: Vec<u8> = [0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00].to_vec();
+    let w_2: Vec<u8> = [
+        0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00,
+    ]
+    .to_vec();
     let w_2 = BigUint::from_bytes_be(&w_2);
     &w_2 + (&x & (&w_2 - BigUint::new(vec![1])))
 }
@@ -634,11 +671,11 @@ fn kexhat(x: BigUint) -> BigUint {
 fn zab(public_key: &str, uid: &[u8]) -> String {
     let entla: usize = 8 * uid.len();
     let za = concat_vec!(
-        &vec![((entla >> 8) & 0xFF) as u8, (entla & 0xFF) as u8], 
-        uid, 
-        &hex::decode(ECC_A).unwrap(), 
-        &hex::decode(ECC_B).unwrap(), 
-        &hex::decode(ECC_G).unwrap(), 
+        &vec![((entla >> 8) & 0xFF) as u8, (entla & 0xFF) as u8],
+        uid,
+        &hex::decode(ECC_A).unwrap(),
+        &hex::decode(ECC_B).unwrap(),
+        &hex::decode(ECC_G).unwrap(),
         &hex::decode(public_key).unwrap()
     );
     sm3_hash(&za)
@@ -649,7 +686,16 @@ pub struct KeyExchangeResult {
     pub s12: Vec<u8>,
 }
 
-fn keyexchange_raw(klen: usize, ida: &[u8], idb: &[u8], private_key: &str, public_key: &str, r_private_key: &str, r_public_key: &str, is_a: bool) -> KeyExchangeResult {
+fn keyexchange_raw(
+    klen: usize,
+    ida: &[u8],
+    idb: &[u8],
+    private_key: &str,
+    public_key: &str,
+    r_private_key: &str,
+    r_public_key: &str,
+    is_a: bool,
+) -> KeyExchangeResult {
     let x2hat = kexhat(BigUint::from_str_radix(&pk_from_sk(r_private_key)[0..64], 16).unwrap());
     let x2rb = x2hat * BigUint::from_str_radix(r_private_key, 16).unwrap();
     let tbt = BigUint::from_str_radix(private_key, 16).unwrap() + x2rb;
@@ -677,43 +723,51 @@ fn keyexchange_raw(klen: usize, ida: &[u8], idb: &[u8], private_key: &str, publi
     };
     let zb = zab(&pzb, idb);
     let z = concat_vec!(
-        &vx.to_bytes_be(), 
-        &vy.to_bytes_be(), 
-        &hex::decode(&za).unwrap(), 
+        &vx.to_bytes_be(),
+        &vy.to_bytes_be(),
+        &hex::decode(&za).unwrap(),
         &hex::decode(&zb).unwrap()
     );
     let z = hex::encode(&z).into_bytes();
     let h1 = if !is_a {
         concat_vec!(
-            &BigUint::to_bytes_be(&vx), 
-            &za.into_bytes(), 
-            &zb.into_bytes(), 
-            &BigUint::to_bytes_be(&BigUint::from_str_radix(&pk_from_sk(&r_private_key)[0..64], 16).unwrap()), 
-            &BigUint::to_bytes_be(&BigUint::from_str_radix(&pk_from_sk(&r_private_key)[64..], 16).unwrap()), 
-            &BigUint::to_bytes_be(&BigUint::from_str_radix(&r_public_key[0..64], 16).unwrap()), 
+            &BigUint::to_bytes_be(&vx),
+            &za.into_bytes(),
+            &zb.into_bytes(),
+            &BigUint::to_bytes_be(
+                &BigUint::from_str_radix(&pk_from_sk(&r_private_key)[0..64], 16).unwrap()
+            ),
+            &BigUint::to_bytes_be(
+                &BigUint::from_str_radix(&pk_from_sk(&r_private_key)[64..], 16).unwrap()
+            ),
+            &BigUint::to_bytes_be(&BigUint::from_str_radix(&r_public_key[0..64], 16).unwrap()),
             &BigUint::to_bytes_be(&BigUint::from_str_radix(&r_public_key[64..], 16).unwrap())
         )
     } else {
         concat_vec!(
-            &BigUint::to_bytes_be(&vx), 
-            &za.into_bytes(), 
-            &zb.into_bytes(), 
-            &BigUint::to_bytes_be(&BigUint::from_str_radix(&r_public_key[0..64], 16).unwrap()), 
-            &BigUint::to_bytes_be(&BigUint::from_str_radix(&r_public_key[64..], 16).unwrap()), 
-            &BigUint::to_bytes_be(&BigUint::from_str_radix(&pk_from_sk(&r_private_key)[0..64], 16).unwrap()), 
-            &BigUint::to_bytes_be(&BigUint::from_str_radix(&pk_from_sk(&r_private_key)[64..], 16).unwrap())
+            &BigUint::to_bytes_be(&vx),
+            &za.into_bytes(),
+            &zb.into_bytes(),
+            &BigUint::to_bytes_be(&BigUint::from_str_radix(&r_public_key[0..64], 16).unwrap()),
+            &BigUint::to_bytes_be(&BigUint::from_str_radix(&r_public_key[64..], 16).unwrap()),
+            &BigUint::to_bytes_be(
+                &BigUint::from_str_radix(&pk_from_sk(&r_private_key)[0..64], 16).unwrap()
+            ),
+            &BigUint::to_bytes_be(
+                &BigUint::from_str_radix(&pk_from_sk(&r_private_key)[64..], 16).unwrap()
+            )
         )
     };
     let hash = sm3_hash(&h1);
     let h2 = concat_vec!(
-        &hex::decode("02").unwrap(), 
-        &BigUint::to_bytes_be(&vy), 
+        &hex::decode("02").unwrap(),
+        &BigUint::to_bytes_be(&vy),
         &hex::decode(&hash).unwrap()
     );
     let s1 = sm3_hash(&h2);
     let h3 = concat_vec!(
-        &hex::decode("03").unwrap(), 
-        &BigUint::to_bytes_be(&vy), 
+        &hex::decode("03").unwrap(),
+        &BigUint::to_bytes_be(&vy),
         &hex::decode(&hash).unwrap()
     );
     let s2 = sm3_hash(&h3);
@@ -721,19 +775,57 @@ fn keyexchange_raw(klen: usize, ida: &[u8], idb: &[u8], private_key: &str, publi
         k: hex::encode(kdf(&z, klen)),
         s12: yasna::construct_der(|writer| {
             writer.write_sequence(|writer| {
-                writer.next().write_bytes(&s1.into_bytes());
-                writer.next().write_bytes(&s2.into_bytes());
+                writer
+                    .next()
+                    .write_bytes(&s1.into_bytes());
+                writer
+                    .next()
+                    .write_bytes(&s2.into_bytes());
             });
         }),
     }
 }
 
-fn keyexchange_a(klen: usize, ida: &[u8], idb: &[u8], private_key_a: &str, public_key_b: &str, private_key_ar: &str, public_key_br: &str) -> KeyExchangeResult {
-    keyexchange_raw(klen, ida, idb, private_key_a, public_key_b, private_key_ar, public_key_br, true)
+fn keyexchange_a(
+    klen: usize,
+    ida: &[u8],
+    idb: &[u8],
+    private_key_a: &str,
+    public_key_b: &str,
+    private_key_ar: &str,
+    public_key_br: &str,
+) -> KeyExchangeResult {
+    keyexchange_raw(
+        klen,
+        ida,
+        idb,
+        private_key_a,
+        public_key_b,
+        private_key_ar,
+        public_key_br,
+        true,
+    )
 }
 
-fn keyexchange_b(klen: usize, idb: &[u8], ida: &[u8], private_key_b: &str, public_key_a: &str, private_key_br: &str, public_key_ar: &str) -> KeyExchangeResult {
-    keyexchange_raw(klen, ida, idb, private_key_b, public_key_a, private_key_br, public_key_ar, false)
+fn keyexchange_b(
+    klen: usize,
+    idb: &[u8],
+    ida: &[u8],
+    private_key_b: &str,
+    public_key_a: &str,
+    private_key_br: &str,
+    public_key_ar: &str,
+) -> KeyExchangeResult {
+    keyexchange_raw(
+        klen,
+        ida,
+        idb,
+        private_key_b,
+        public_key_a,
+        private_key_br,
+        public_key_ar,
+        false,
+    )
 }
 
 fn keyexchange_1ab(klen: usize, id: &[u8], private_key: &str) -> (Vec<u8>, String) {
@@ -744,15 +836,24 @@ fn keyexchange_1ab(klen: usize, id: &[u8], private_key: &str) -> (Vec<u8>, Strin
             writer.write_sequence(|writer| {
                 writer.next().write_u32(klen as u32);
                 writer.next().write_bytes(id);
-                writer.next().write_bytes(&public_key.into_bytes());
-                writer.next().write_bytes(&public_key_r.into_bytes());
+                writer
+                    .next()
+                    .write_bytes(&public_key.into_bytes());
+                writer
+                    .next()
+                    .write_bytes(&public_key_r.into_bytes());
             });
         }),
-        private_key_r
+        private_key_r,
     )
 }
 
-fn keyexchange_2a(id: &[u8], private_key: &str, private_key_r: &str, recive_bytes: &[u8]) -> KeyExchangeResult {
+fn keyexchange_2a(
+    id: &[u8],
+    private_key: &str,
+    private_key_r: &str,
+    recive_bytes: &[u8],
+) -> KeyExchangeResult {
     let klenidbpkpkr = yasna::parse_der(recive_bytes, |reader| {
         reader.read_sequence(|reader| {
             let klen = reader.next().read_u32()?;
@@ -783,10 +884,23 @@ fn keyexchange_2a(id: &[u8], private_key: &str, private_key_r: &str, recive_byte
     let klen = klen as usize;
     let public_key = std::str::from_utf8(&public_key).unwrap();
     let public_key_r = std::str::from_utf8(&public_key_r).unwrap();
-    keyexchange_a(klen, id, &idb, private_key, public_key, private_key_r, public_key_r)
+    keyexchange_a(
+        klen,
+        id,
+        &idb,
+        private_key,
+        public_key,
+        private_key_r,
+        public_key_r,
+    )
 }
 
-fn keyexchange_2b(id: &[u8], private_key: &str, private_key_r: &str, recive_bytes: &[u8]) -> KeyExchangeResult {
+fn keyexchange_2b(
+    id: &[u8],
+    private_key: &str,
+    private_key_r: &str,
+    recive_bytes: &[u8],
+) -> KeyExchangeResult {
     let klenidapkpkr = yasna::parse_der(recive_bytes, |reader| {
         reader.read_sequence(|reader| {
             let klen = reader.next().read_u32()?;
@@ -817,7 +931,15 @@ fn keyexchange_2b(id: &[u8], private_key: &str, private_key_r: &str, recive_byte
     let klen = klen as usize;
     let public_key = std::str::from_utf8(&public_key).unwrap();
     let public_key_r = std::str::from_utf8(&public_key_r).unwrap();
-    keyexchange_b(klen, id, &ida, private_key, public_key, private_key_r, public_key_r)
+    keyexchange_b(
+        klen,
+        id,
+        &ida,
+        private_key,
+        public_key,
+        private_key_r,
+        public_key_r,
+    )
 }
 
 pub struct Sign<'a> {
@@ -827,19 +949,28 @@ pub struct Sign<'a> {
 
 impl<'a> Default for Sign<'a> {
     fn default() -> Self {
-        Sign { id: b"1234567812345678", private_key: "" }
+        Sign {
+            id: b"1234567812345678",
+            private_key: "",
+        }
     }
 }
 
 impl<'a> Sign<'a> {
     /// Initialize a sm2 sign instance with default id b"1234567812345678".
     pub fn new(private_key: &'a str) -> Self {
-        Sign { private_key: private_key, ..Sign::default() }
+        Sign {
+            private_key: private_key,
+            ..Sign::default()
+        }
     }
 
     /// Initialize a sm2 sign instance with a custom id.
     pub fn new_with_id(id: &'a [u8], private_key: &'a str) -> Self {
-        Sign { id: id, private_key: private_key }
+        Sign {
+            id: id,
+            private_key: private_key,
+        }
     }
 
     /// Sign with sm3.
@@ -864,7 +995,10 @@ pub struct Verify<'a> {
 
 impl<'a> Default for Verify<'a> {
     fn default() -> Self {
-        Verify { id: b"1234567812345678", public_key: Cow::Borrowed("") }
+        Verify {
+            id: b"1234567812345678",
+            public_key: Cow::Borrowed(""),
+        }
     }
 }
 
@@ -872,12 +1006,18 @@ impl<'a> Verify<'a> {
     /// Initialize a sm2 verify instance with default id b"1234567812345678".
     pub fn new(public_key: &'a str) -> Self {
         let public_key = pubkey_trim(public_key);
-        Verify { public_key: public_key, ..Verify::default() }
+        Verify {
+            public_key: public_key,
+            ..Verify::default()
+        }
     }
 
     /// Initialize a sm2 verify instance with a custom id.
     pub fn new_with_id(id: &'a [u8], public_key: &'a str) -> Self {
-        Verify { id: id, public_key: Cow::Borrowed(public_key) }
+        Verify {
+            id: id,
+            public_key: Cow::Borrowed(public_key),
+        }
     }
 
     /// Verify with sm3.
@@ -902,7 +1042,9 @@ pub struct Encrypt<'a> {
 impl<'a> Encrypt<'a> {
     pub fn new(public_key: &'a str) -> Self {
         let public_key = pubkey_trim(public_key);
-        Encrypt { public_key: public_key }
+        Encrypt {
+            public_key: public_key,
+        }
     }
 
     pub fn encrypt(&self, data: &[u8]) -> Vec<u8> {
@@ -936,7 +1078,9 @@ pub struct Decrypt<'a> {
 
 impl<'a> Decrypt<'a> {
     pub fn new(private_key: &'a str) -> Self {
-        Decrypt { private_key: private_key }
+        Decrypt {
+            private_key: private_key,
+        }
     }
 
     pub fn decrypt(&self, data: &[u8]) -> Vec<u8> {
@@ -971,7 +1115,10 @@ pub struct KeyExchange<'a> {
 
 impl<'a> KeyExchange<'a> {
     pub fn new(id: &'a [u8], private_key: &'a str) -> Self {
-        KeyExchange { id: id, private_key: private_key }
+        KeyExchange {
+            id: id,
+            private_key: private_key,
+        }
     }
 
     /// klen is the length of key to generate.
