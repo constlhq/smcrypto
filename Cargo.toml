@@ -1,7 +1,7 @@
 [package]
 name = "smcrypto"
 version = "0.3.1"
-edition = "2021"
+edition = "2024"
 authors = ["yumeng <yumeng@foxmail.com>"]
 description = "A Rust Implementation of China's Standards of Encryption Algorithms(SM2/SM3/SM4)"
 keywords = ["cipher", "cryptography"]
@@ -16,4 +16,12 @@ num-integer = "0.1.44"
 rand = "0.8.4"
 pem = "1.0.2"
 base64 = "0.13.0"
-yasna = {version = "0.5.0", features = ["num-bigint"]}
+yasna = { version = "0.5.0", features = ["num-bigint"] }
+digest = { version = "0.10.7" }
+ghash = { version = "0.5.0", features = ["zeroize"] }
+sm4 = "0.5.1"
+cbc = "0.1.2"
+cipher = {version = "0.4.4",features = ["alloc"] }
+crypto-common = "0.1.6"
+[dev-dependencies]
+hex-literal = "1.0.0"

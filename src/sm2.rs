@@ -1,4 +1,6 @@
-use crate::sm3::{sm3_hash, sm3_hash_raw};
+use crate::sm3::Sm3;
+use digest::Digest;
+use hex::ToHex;
 use num_bigint::BigUint;
 use num_integer::*;
 use num_traits::*;
@@ -8,6 +10,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 use std::vec;
+// use crate::sm3::{sm3_hash, sm3_hash_raw};
 
 static PARA_LEN: usize = 64;
 const ECC_N: &'static str = "fffffffeffffffffffffffffffffffff7203df6b21c6052b53bbf40939d54123";
@@ -43,9 +46,7 @@ fn sub_mod(a: &BigUint, b: &BigUint, ecc_p: &BigUint) -> BigUint {
 fn random_hex(x: usize) -> String {
     let c = "0123456789abcdef";
     let mut thread_rng = rand::thread_rng();
-    let rand_hex_chars = c
-        .chars()
-        .choose_multiple(&mut thread_rng, x);
+    let rand_hex_chars = c.chars().choose_multiple(&mut thread_rng, x);
     String::from_iter(rand_hex_chars)
 }
 
@@ -89,7 +90,7 @@ fn kdf(z: &[u8], klen: usize) -> Vec<u8> {
         tmp.clear();
         tmp.extend_from_slice(z);
         tmp.extend_from_slice(&ct.to_be_bytes());
-        let hash = sm3_hash_raw(&tmp);
+        let hash = Sm3::digest(&tmp);
         if i + 1 == j && klen % 32 != 0 {
             c.extend_from_slice(&hash[0..(klen % 32)])
         } else {
@@ -503,13 +504,14 @@ fn verify_raw(data: &[u8], sign: &[u8], public_key: &str) -> bool {
 fn sign(id: &[u8], data: &[u8], private_key: &str) -> Vec<u8> {
     let public_key = pk_from_sk(private_key);
     let m_bar = concat_vec(&hex::decode(zab(&public_key, id)).unwrap(), data);
-    let e = hex::decode(sm3_hash(&m_bar)).unwrap();
+    let e = Sm3::digest(m_bar); // hex::decode(sm3_hash(&m_bar)).unwrap();
     sign_raw(&e, private_key)
 }
 
 fn verify(id: &[u8], data: &[u8], sign: &[u8], public_key: &str) -> bool {
     let m_bar = concat_vec(&hex::decode(zab(&public_key, id)).unwrap(), data);
-    let e = hex::decode(sm3_hash(&m_bar)).unwrap();
+    // let e = hex::decode(sm3_hash(&m_bar)).unwrap();
+    let e = Sm3::digest(&m_bar);
     verify_raw(&e, sign, public_key)
 }
 
@@ -547,8 +549,9 @@ fn encrypt(data: &[u8], public_key: &str) -> Vec<u8> {
         let c2 = BigUint::to_bytes_be(&c2);
         let c2 = append_zero(&c2, data.len());
         let h = concat_vec!(&x2, data, &y2);
-        let c3 = sm3_hash(&h);
-        let c3 = hex::decode(c3).unwrap();
+        // let c3 = sm3_hash(&h);
+        // let c3 = hex::decode(c3).unwrap();
+        let c3 = Sm3::digest(&h);
         let cipher = concat_vec!(&c1, &c3, &c2);
         cipher
     };
@@ -678,7 +681,7 @@ fn zab(public_key: &str, uid: &[u8]) -> String {
         &hex::decode(ECC_G).unwrap(),
         &hex::decode(public_key).unwrap()
     );
-    sm3_hash(&za)
+    Sm3::digest(&za).encode_hex()
 }
 
 pub struct KeyExchangeResult {
@@ -758,29 +761,28 @@ fn keyexchange_raw(
             )
         )
     };
-    let hash = sm3_hash(&h1);
+    // let hash = sm3_hash(&h1);
+    let hash = Sm3::digest(&h1);
     let h2 = concat_vec!(
         &hex::decode("02").unwrap(),
         &BigUint::to_bytes_be(&vy),
-        &hex::decode(&hash).unwrap()
+        &hash
     );
-    let s1 = sm3_hash(&h2);
+    // let s1 = sm3_hash(&h2);
+    let s1:String = Sm3::digest(&h2).as_slice().encode_hex();
     let h3 = concat_vec!(
         &hex::decode("03").unwrap(),
         &BigUint::to_bytes_be(&vy),
-        &hex::decode(&hash).unwrap()
+        &hex::decode(&s1).unwrap()
     );
-    let s2 = sm3_hash(&h3);
+    // let s2 = sm3_hash(&h3);
+    let s2:String = Sm3::digest(&h3).as_slice().encode_hex();
     KeyExchangeResult {
         k: hex::encode(kdf(&z, klen)),
         s12: yasna::construct_der(|writer| {
             writer.write_sequence(|writer| {
-                writer
-                    .next()
-                    .write_bytes(&s1.into_bytes());
-                writer
-                    .next()
-                    .write_bytes(&s2.into_bytes());
+                writer.next().write_bytes(&s1.into_bytes());
+                writer.next().write_bytes(&s2.into_bytes());
             });
         }),
     }
@@ -836,12 +838,8 @@ fn keyexchange_1ab(klen: usize, id: &[u8], private_key: &str) -> (Vec<u8>, Strin
             writer.write_sequence(|writer| {
                 writer.next().write_u32(klen as u32);
                 writer.next().write_bytes(id);
-                writer
-                    .next()
-                    .write_bytes(&public_key.into_bytes());
-                writer
-                    .next()
-                    .write_bytes(&public_key_r.into_bytes());
+                writer.next().write_bytes(&public_key.into_bytes());
+                writer.next().write_bytes(&public_key_r.into_bytes());
             });
         }),
         private_key_r,

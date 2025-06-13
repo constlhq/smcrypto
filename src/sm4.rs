@@ -1,3 +1,6 @@
+use ghash::universal_hash::KeyInit;
+use ghash::{GHash, universal_hash::UniversalHash};
+use std::io::Read;
 use std::vec;
 
 const SM4_BOXES_TABLE: [u8; 256] = [
@@ -57,7 +60,9 @@ fn f(x0: u32, x1: u32, x2: u32, x3: u32, rk: u32) -> u32 {
 
 fn xor(a: &Vec<u8>, b: &Vec<u8>) -> Vec<u8> {
     assert_eq!(a.len(), b.len());
-    (0..a.len()).map(|i| a[i] ^ b[i]).collect()
+    (0..a.len())
+        .map(|i| a[i] ^ b[i])
+        .collect()
 }
 
 fn padding(data: Vec<u8>) -> Vec<u8> {
@@ -71,7 +76,7 @@ fn unpadding(data: Vec<u8>) -> Vec<u8> {
     data[0..(data.len() - data[data.len() - 1] as usize)].to_vec()
 }
 
-fn set_key(key: &[u8], mode: &str) -> Vec<u32> {
+fn set_key(key: &[u8], is_decrypt: bool) -> Vec<u32> {
     let mut sk: Vec<u32> = vec![0; 32];
     let mut mk: Vec<u32> = vec![0, 0, 0, 0];
     let mut k: Vec<u32> = vec![0; 36];
@@ -79,13 +84,15 @@ fn set_key(key: &[u8], mode: &str) -> Vec<u32> {
     mk[1] = u32::from_be_bytes([key[4], key[5], key[6], key[7]]);
     mk[2] = u32::from_be_bytes([key[8], key[9], key[10], key[11]]);
     mk[3] = u32::from_be_bytes([key[12], key[13], key[14], key[15]]);
-    let temp: Vec<u32> = (0..4).map(|i| mk[i] ^ SM4_FK[i]).collect();
+    let temp: Vec<u32> = (0..4)
+        .map(|i| mk[i] ^ SM4_FK[i])
+        .collect();
     k[0..4].clone_from_slice(&temp);
     for i in 0..32 {
         k[i + 4] = k[i] ^ (round_key(k[i + 1] ^ k[i + 2] ^ k[i + 3] ^ SM4_CK[i]));
         sk[i] = k[i + 4];
     }
-    if mode == "SM4_DECRYPT" {
+    if is_decrypt {
         for idx in 0..16 {
             let t = sk[idx];
             sk[idx] = sk[31 - idx];
@@ -95,7 +102,7 @@ fn set_key(key: &[u8], mode: &str) -> Vec<u32> {
     sk
 }
 
-fn one_round(sk: Vec<u32>, in_put: Vec<u8>) -> Vec<u8> {
+fn encrypt_block(sk: Vec<u32>, in_put: Vec<u8>) -> Vec<u8> {
     let mut out_put = vec![];
     let mut ulbuf = vec![0; 36];
     ulbuf[0] = u32::from_be_bytes([in_put[0], in_put[1], in_put[2], in_put[3]]);
@@ -119,13 +126,13 @@ fn one_round(sk: Vec<u32>, in_put: Vec<u8>) -> Vec<u8> {
 }
 
 fn encrypt_ecb(input_data: &[u8], key: &[u8]) -> Vec<u8> {
-    let sk = set_key(key, "SM4_ENCRYPT");
+    let sk = set_key(key, false);
     let input_data = padding(input_data.to_vec());
     let mut length = input_data.len();
     let mut i = 0;
     let mut output_data: Vec<u8> = vec![];
     while length > 0 {
-        output_data.append(&mut one_round(
+        output_data.append(&mut encrypt_block(
             sk.to_owned(),
             input_data[i..(i + 16)].to_vec(),
         ));
@@ -152,12 +159,12 @@ fn encrypt_ecb_to_file(input_file: &str, output_file: &str, key: &[u8]) {
 }
 
 fn decrypt_ecb(input_data: &[u8], key: &[u8]) -> Vec<u8> {
-    let sk = set_key(key, "SM4_DECRYPT");
+    let sk = set_key(key, true);
     let mut length = input_data.len();
     let mut i = 0;
     let mut output_data: Vec<u8> = vec![];
     while length > 0 {
-        output_data.append(&mut one_round(
+        output_data.append(&mut encrypt_block(
             sk.to_owned(),
             input_data[i..(i + 16)].to_vec(),
         ));
@@ -184,7 +191,7 @@ fn decrypt_ecb_from_file(input_file: &str, output_file: &str, key: &[u8]) {
 }
 
 fn encrypt_cbc(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
-    let sk = set_key(key, "SM4_ENCRYPT");
+    let sk = set_key(key, false);
     let mut i = 0;
     let mut output_data: Vec<u8> = vec![];
     let mut tmp_input: Vec<u8>;
@@ -193,7 +200,7 @@ fn encrypt_cbc(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
     let mut length = input_data.len();
     while length > 0 {
         tmp_input = xor(&input_data[i..(i + 16)].to_vec(), &iv[0..16].to_vec());
-        output_data.append(&mut one_round(sk.to_owned(), tmp_input[0..16].to_vec()));
+        output_data.append(&mut encrypt_block(sk.to_owned(), tmp_input[0..16].to_vec()));
         iv = output_data[i..(i + 16)].to_vec();
         i += 16;
         length -= 16;
@@ -202,7 +209,7 @@ fn encrypt_cbc(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
 }
 
 fn encrypt_cbc_padding_none(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
-    let sk = set_key(key, "SM4_ENCRYPT");
+    let sk = set_key(key, false);
     let mut i = 0;
     let mut output_data: Vec<u8> = vec![];
     let mut tmp_input: Vec<u8>;
@@ -211,7 +218,7 @@ fn encrypt_cbc_padding_none(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8>
     let mut length = input_data.len();
     while length > 0 {
         tmp_input = xor(&input_data[i..(i + 16)].to_vec(), &iv[0..16].to_vec());
-        output_data.append(&mut one_round(sk.to_owned(), tmp_input[0..16].to_vec()));
+        output_data.append(&mut encrypt_block(sk.to_owned(), tmp_input[0..16].to_vec()));
         iv = output_data[i..(i + 16)].to_vec();
         i += 16;
         length -= 16;
@@ -236,13 +243,13 @@ fn encrypt_cbc_to_file(input_file: &str, output_file: &str, key: &[u8], iv: &[u8
 }
 
 fn decrypt_cbc(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
-    let sk = set_key(key, "SM4_DECRYPT");
+    let sk = set_key(key, false);
     let mut i = 0;
     let mut output_data: Vec<u8> = vec![];
     let mut iv = iv.to_vec();
     let mut length = input_data.len();
     while length > 0 {
-        output_data.append(&mut one_round(
+        output_data.append(&mut encrypt_block(
             sk.to_owned(),
             input_data[i..(i + 16)].to_vec(),
         ));
@@ -258,13 +265,13 @@ fn decrypt_cbc(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
 }
 
 fn decrypt_cbc_no_padding(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
-    let sk = set_key(key, "SM4_DECRYPT");
+    let sk = set_key(key, true);
     let mut i = 0;
     let mut output_data: Vec<u8> = vec![];
     let mut iv = iv.to_vec();
     let mut length = input_data.len();
     while length > 0 {
-        output_data.append(&mut one_round(
+        output_data.append(&mut encrypt_block(
             sk.to_owned(),
             input_data[i..(i + 16)].to_vec(),
         ));
@@ -384,5 +391,343 @@ impl<'a> CryptSM4CBC<'a> {
 
     pub fn decrypt_from_file(&self, input_file: &str, output_file: &str) {
         decrypt_cbc_from_file(input_file, output_file, self.key, self.iv)
+    }
+}
+
+// CTR mode encryption for GCM
+fn encrypt_ctr(input_data: &[u8], key: &[u8], iv: &[u8]) -> Vec<u8> {
+    let sk = set_key(key, false);
+    let mut output_data = Vec::new();
+    let mut counter = [0u8; 16];
+
+    // Initialize counter with IV (12 bytes) + 4 bytes of counter
+    counter[..12].copy_from_slice(&iv[..12]);
+    counter[12..].copy_from_slice(&1u32.to_be_bytes());
+
+    let mut pos = 0;
+    while pos < input_data.len() {
+        let keystream = encrypt_block(sk.clone(), counter.to_vec());
+
+        let block_size = std::cmp::min(16, input_data.len() - pos);
+        for i in 0..block_size {
+            output_data.push(input_data[pos + i] ^ keystream[i]);
+        }
+
+        pos += block_size;
+
+        // Increment counter
+        let mut counter_val =
+            u32::from_be_bytes([counter[12], counter[13], counter[14], counter[15]]);
+        counter_val = counter_val.wrapping_add(1);
+        counter[12..].copy_from_slice(&counter_val.to_be_bytes());
+    }
+
+    output_data
+}
+
+// Generate GHASH key by encrypting zero block
+fn generate_ghash_key(key: &[u8]) -> [u8; 16] {
+    let sk = set_key(key, false);
+    let zero_block = vec![0u8; 16];
+    let h = encrypt_block(sk, zero_block);
+    let mut result = [0u8; 16];
+    result.copy_from_slice(&h);
+    result
+}
+
+// Pad data to block size (16 bytes)
+fn pad_to_block_size(data: &[u8]) -> Vec<u8> {
+    let mut padded = data.to_vec();
+    while padded.len() % 16 != 0 {
+        padded.push(0);
+    }
+    padded
+}
+
+// Calculate GHASH for authentication
+fn calculate_ghash(h: &[u8; 16], aad: &[u8], ciphertext: &[u8]) -> [u8; 16] {
+    let mut ghash = GHash::new_from_slice(h).unwrap();
+
+    // Process AAD
+    if !aad.is_empty() {
+        let padded_aad = pad_to_block_size(aad);
+        ghash.update_padded(&padded_aad);
+    }
+
+    // Process ciphertext
+    if !ciphertext.is_empty() {
+        let padded_ct = pad_to_block_size(ciphertext);
+        ghash.update_padded(&padded_ct);
+    }
+
+    // Process lengths
+    let aad_len = (aad.len() as u64) * 8;
+    let ct_len = (ciphertext.len() as u64) * 8;
+    let mut len_block = [0u8; 16];
+    len_block[0..8].copy_from_slice(&aad_len.to_be_bytes());
+    len_block[8..16].copy_from_slice(&ct_len.to_be_bytes());
+    ghash.update_padded(&len_block);
+
+    let tag = ghash.finalize();
+    tag.into()
+}
+
+// GCM encryption
+pub fn encrypt_gcm(input_data: &[u8], key: &[u8], iv: &[u8], aad: &[u8]) -> (Vec<u8>, [u8; 16]) {
+    // Generate ciphertext using CTR mode
+    let ciphertext = encrypt_ctr(input_data, key, iv);
+
+    let mut ghash_key = ghash::Key::default();
+
+    // Generate GHASH key
+    let h = generate_ghash_key(key);
+
+    println!("g_hash:{}", hex::encode(&h));
+    println!("ciphertext:{}", hex::encode(&ciphertext));
+
+    // Calculate GHASH
+    let ghash_result = calculate_ghash(&h, aad, &ciphertext);
+
+    // Generate authentication tag
+    let sk = set_key(key, false);
+    let mut j0 = [0u8; 16];
+    j0[..12].copy_from_slice(&iv[..12]);
+    j0[15] = 1; // Counter starts at 1 for tag generation
+
+    let e_j0 = encrypt_block(sk, j0.to_vec());
+    let mut tag = [0u8; 16];
+    for i in 0..16 {
+        tag[i] = ghash_result[i] ^ e_j0[i];
+    }
+
+    (ciphertext, tag)
+}
+
+// GCM decryption
+fn decrypt_gcm(
+    ciphertext: &[u8],
+    key: &[u8],
+    iv: &[u8],
+    aad: &[u8],
+    tag: &[u8; 16],
+) -> Result<Vec<u8>, &'static str> {
+    // Generate GHASH key
+    let h = generate_ghash_key(key);
+
+    // Calculate GHASH for verification
+    let ghash_result = calculate_ghash(&h, aad, ciphertext);
+
+    // Generate expected tag
+    let sk = set_key(key, false);
+    let mut j0 = [0u8; 16];
+    j0[..12].copy_from_slice(&iv[..12]);
+    j0[15] = 1; // Counter starts at 1 for tag generation
+
+    let e_j0 = encrypt_block(sk, j0.to_vec());
+    let mut expected_tag = [0u8; 16];
+    for i in 0..16 {
+        expected_tag[i] = ghash_result[i] ^ e_j0[i];
+    }
+
+    // Verify tag
+    if tag != &expected_tag {
+        return Err("Authentication failed");
+    }
+
+    // Decrypt using CTR mode
+    let plaintext = encrypt_ctr(ciphertext, key, iv); // CTR mode is symmetric
+    Ok(plaintext)
+}
+
+// Base64/Hex helper functions for GCM
+fn encrypt_gcm_base64(input_data: &[u8], key: &[u8], iv: &[u8], aad: &[u8]) -> (String, String) {
+    let (ciphertext, tag) = encrypt_gcm(input_data, key, iv, aad);
+    (base64::encode(ciphertext), base64::encode(tag))
+}
+
+fn encrypt_gcm_hex(input_data: &[u8], key: &[u8], iv: &[u8], aad: &[u8]) -> (String, String) {
+    let (ciphertext, tag) = encrypt_gcm(input_data, key, iv, aad);
+    (hex::encode(ciphertext), hex::encode(tag))
+}
+
+fn decrypt_gcm_base64(
+    ciphertext: &str,
+    key: &[u8],
+    iv: &[u8],
+    aad: &[u8],
+    tag: &str,
+) -> Result<Vec<u8>, &'static str> {
+    let ct_bytes = base64::decode(ciphertext).map_err(|_| "Invalid base64 ciphertext")?;
+    let tag_bytes = base64::decode(tag).map_err(|_| "Invalid base64 tag")?;
+
+    if tag_bytes.len() != 16 {
+        return Err("Invalid tag length");
+    }
+
+    let mut tag_array = [0u8; 16];
+    tag_array.copy_from_slice(&tag_bytes);
+
+    decrypt_gcm(&ct_bytes, key, iv, aad, &tag_array)
+}
+
+fn decrypt_gcm_hex(
+    ciphertext: &str,
+    key: &[u8],
+    iv: &[u8],
+    aad: &[u8],
+    tag: &str,
+) -> Result<Vec<u8>, &'static str> {
+    let ct_bytes = hex::decode(ciphertext).map_err(|_| "Invalid hex ciphertext")?;
+    let tag_bytes = hex::decode(tag).map_err(|_| "Invalid hex tag")?;
+
+    if tag_bytes.len() != 16 {
+        return Err("Invalid tag length");
+    }
+
+    let mut tag_array = [0u8; 16];
+    tag_array.copy_from_slice(&tag_bytes);
+
+    decrypt_gcm(&ct_bytes, key, iv, aad, &tag_array)
+}
+
+// SM4-GCM struct for easier usage
+pub struct CryptSM4GCM<'a> {
+    pub key: &'a [u8],
+    pub iv: &'a [u8],
+}
+
+impl<'a> CryptSM4GCM<'a> {
+    pub fn new(key: &'a [u8], iv: &'a [u8]) -> Self {
+        assert_eq!(key.len(), 16, "Key must be 16 bytes");
+        assert_eq!(iv.len(), 12, "IV must be 12 bytes for GCM");
+        CryptSM4GCM { key, iv }
+    }
+
+    pub fn encrypt_gcm(&self, input_data: &[u8], aad: &[u8]) -> (Vec<u8>, [u8; 16]) {
+        encrypt_gcm(input_data, self.key, self.iv, aad)
+    }
+
+    pub fn decrypt_gcm(
+        &self,
+        ciphertext: &[u8],
+        aad: &[u8],
+        tag: &[u8; 16],
+    ) -> Result<Vec<u8>, &'static str> {
+        decrypt_gcm(ciphertext, self.key, self.iv, aad, tag)
+    }
+
+    pub fn encrypt_gcm_base64(&self, input_data: &[u8], aad: &[u8]) -> (String, String) {
+        encrypt_gcm_base64(input_data, self.key, self.iv, aad)
+    }
+
+    pub fn encrypt_gcm_hex(&self, input_data: &[u8], aad: &[u8]) -> (String, String) {
+        encrypt_gcm_hex(input_data, self.key, self.iv, aad)
+    }
+
+    pub fn decrypt_gcm_base64(
+        &self,
+        ciphertext: &str,
+        aad: &[u8],
+        tag: &str,
+    ) -> Result<Vec<u8>, &'static str> {
+        decrypt_gcm_base64(ciphertext, self.key, self.iv, aad, tag)
+    }
+
+    pub fn decrypt_gcm_hex(
+        &self,
+        ciphertext: &str,
+        aad: &[u8],
+        tag: &str,
+    ) -> Result<Vec<u8>, &'static str> {
+        decrypt_gcm_hex(ciphertext, self.key, self.iv, aad, tag)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sm4_gcm_encrypt_decrypt() {
+        let key = [0; 16]; // 16 bytes
+        let iv = [0; 12]; // 12 bytes for GCM
+        let plaintext = b"A";
+        let aad = [];
+
+        let gcm = CryptSM4GCM::new(&key, &iv);
+
+        // Encrypt
+        let (mut ciphertext, tag) = gcm.encrypt_gcm(&plaintext[..], &aad);
+
+        ciphertext.extend_from_slice(&tag);
+        assert_eq!(
+            hex::encode(ciphertext),
+            "3c0a0922976fa15e835bc96750e730d967"
+        );
+        // assert_eq!(hex::encode(&ciphertext),"8d073cee249f4a0b94c947f178bc8143e759ec7383f1e6fee8bf4fa6cc6e99e6b3d38c4489e66131f18e473f7214fdac");
+        // Decrypt
+        // let decrypted = gcm.decrypt_gcm(&ciphertext, aad, &tag).unwrap();
+
+        // assert_eq!(plaintext, &decrypted[..]);
+    }
+
+    #[test]
+    fn test_sm4_gcm_base64() {
+        let key = b"0123456789abcdef";
+        let iv = b"123456789012";
+        let plaintext = b"Hello, SM4-GCM!";
+        let aad = b"additional data";
+
+        let gcm = CryptSM4GCM::new(key, iv);
+
+        // Encrypt to base64
+        let (ct_base64, tag_base64) = gcm.encrypt_gcm_base64(plaintext, aad);
+
+        // Decrypt from base64
+        let decrypted = gcm
+            .decrypt_gcm_base64(&ct_base64, aad, &tag_base64)
+            .unwrap();
+
+        assert_eq!(plaintext, &decrypted[..]);
+    }
+
+    #[test]
+    fn test_sm4_gcm_hex() {
+        let key = b"0123456789abcdef";
+        let iv = b"123456789012";
+        let plaintext = b"Hello, SM4-GCM!";
+        let aad = b"additional data";
+
+        let gcm = CryptSM4GCM::new(key, iv);
+
+        // Encrypt to hex
+        let (ct_hex, tag_hex) = gcm.encrypt_gcm_hex(plaintext, aad);
+
+        // Decrypt from hex
+        let decrypted = gcm
+            .decrypt_gcm_hex(&ct_hex, aad, &tag_hex)
+            .unwrap();
+
+        assert_eq!(plaintext, &decrypted[..]);
+    }
+
+    #[test]
+    fn test_sm4_gcm_authentication_failure() {
+        let key = b"0123456789abcdef";
+        let iv = b"123456789012";
+        let plaintext = b"Hello, SM4-GCM!";
+        let aad = b"additional data";
+
+        let gcm = CryptSM4GCM::new(key, iv);
+
+        let (ciphertext, mut tag) = gcm.encrypt_gcm(plaintext, aad);
+
+        // Corrupt the tag
+        tag[0] ^= 1;
+
+        // Should fail authentication
+        let result = gcm.decrypt_gcm(&ciphertext, aad, &tag);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Authentication failed");
     }
 }
