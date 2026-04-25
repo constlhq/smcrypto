@@ -60,9 +60,7 @@ fn f(x0: u32, x1: u32, x2: u32, x3: u32, rk: u32) -> u32 {
 
 fn xor(a: &Vec<u8>, b: &Vec<u8>) -> Vec<u8> {
     assert_eq!(a.len(), b.len());
-    (0..a.len())
-        .map(|i| a[i] ^ b[i])
-        .collect()
+    (0..a.len()).map(|i| a[i] ^ b[i]).collect()
 }
 
 fn padding(data: Vec<u8>) -> Vec<u8> {
@@ -84,9 +82,7 @@ fn set_key(key: &[u8], is_decrypt: bool) -> Vec<u32> {
     mk[1] = u32::from_be_bytes([key[4], key[5], key[6], key[7]]);
     mk[2] = u32::from_be_bytes([key[8], key[9], key[10], key[11]]);
     mk[3] = u32::from_be_bytes([key[12], key[13], key[14], key[15]]);
-    let temp: Vec<u32> = (0..4)
-        .map(|i| mk[i] ^ SM4_FK[i])
-        .collect();
+    let temp: Vec<u32> = (0..4).map(|i| mk[i] ^ SM4_FK[i]).collect();
     k[0..4].clone_from_slice(&temp);
     for i in 0..32 {
         k[i + 4] = k[i] ^ (round_key(k[i + 1] ^ k[i + 2] ^ k[i + 3] ^ SM4_CK[i]));
@@ -128,6 +124,22 @@ fn encrypt_block(sk: Vec<u32>, in_put: Vec<u8>) -> Vec<u8> {
 fn encrypt_ecb(input_data: &[u8], key: &[u8]) -> Vec<u8> {
     let sk = set_key(key, false);
     let input_data = padding(input_data.to_vec());
+    let mut length = input_data.len();
+    let mut i = 0;
+    let mut output_data: Vec<u8> = vec![];
+    while length > 0 {
+        output_data.append(&mut encrypt_block(
+            sk.to_owned(),
+            input_data[i..(i + 16)].to_vec(),
+        ));
+        i += 16;
+        length -= 16;
+    }
+    output_data
+}
+
+fn encrypt_ecb_no_padding(input_data: &[u8], key: &[u8]) -> Vec<u8> {
+    let sk = set_key(key, false);
     let mut length = input_data.len();
     let mut i = 0;
     let mut output_data: Vec<u8> = vec![];
@@ -314,6 +326,11 @@ impl<'a> CryptSM4ECB<'a> {
 
     pub fn encrypt_ecb(&self, input_data: &[u8]) -> Vec<u8> {
         encrypt_ecb(input_data, self.key)
+    }
+
+
+    pub fn encrypt_ecb_no_padding(&self, input_data: &[u8]) -> Vec<u8> {
+        encrypt_ecb_no_padding(input_data, self.key)
     }
 
     pub fn encrypt_ecb_base64(&self, input_data: &[u8]) -> String {
@@ -704,9 +721,7 @@ mod tests {
         let (ct_hex, tag_hex) = gcm.encrypt_gcm_hex(plaintext, aad);
 
         // Decrypt from hex
-        let decrypted = gcm
-            .decrypt_gcm_hex(&ct_hex, aad, &tag_hex)
-            .unwrap();
+        let decrypted = gcm.decrypt_gcm_hex(&ct_hex, aad, &tag_hex).unwrap();
 
         assert_eq!(plaintext, &decrypted[..]);
     }

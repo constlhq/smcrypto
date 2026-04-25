@@ -21,5 +21,7 @@ pub fn decrypt_cbc_padded_mut<'a>(
     cipher: &'a mut [u8],
 ) -> Result<&'a [u8], UnpadError> {
     let mut smt = Sm4CbcDec::new(Key::<Sm4>::from_slice(&key), cipher[..16].into());
+
+    println!("====>cipher: {}", hex::encode(&cipher[16..]));
     smt.decrypt_padded_mut::<Pkcs7>(&mut cipher[16..])
 }

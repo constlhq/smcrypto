@@ -1,26 +1,26 @@
 //! A rust implementation of China's standards of encryption algorithms(SM2/SM3/SM4).
-//! 
+//!
 //! ## Quick Start
-//! 
+//!
 //! ### SM3
-//! 
+//!
 //! ```
 //! use smcrypto::sm3;
 //! let hash = sm3::sm3_hash(b"abc");
 //! assert_eq!(hash, "66c7f0f462eeedd9d1f2d46bdc10e4e24167c4875cf2f7a2297da02b8f4ba8e0");
 //! ```
-//! 
+//!
 //! ### SM2 Key Generate
-//! 
+//!
 //! Note that the public key is in hexadecimal format and does not contain the "04" prefix.
-//! 
+//!
 //! ```
 //! use smcrypto::sm2;
 //! let (sk, pk) = sm2::gen_keypair();
 //! ```
-//! 
+//!
 //! ### SM2 Sign/Verify
-//! 
+//!
 //! ```
 //! use smcrypto::sm2;
 //! let (sk, pk) = sm2::gen_keypair();
@@ -30,9 +30,9 @@
 //! let verify = verify_ctx.verify(b"abc", &sign);
 //! assert_eq!(verify, true);
 //! ```
-//! 
+//!
 //! ### SM2 Encrypt/Decrypt
-//! 
+//!
 //! ```
 //! use smcrypto::sm2;
 //! let (sk, pk) = sm2::gen_keypair();
@@ -42,9 +42,9 @@
 //! let dec = dec_ctx.decrypt(&enc);
 //! assert_eq!(String::from_utf8(dec).unwrap(), "abc");
 //! ```
-//! 
+//!
 //! ### SM2 Key Exchange
-//! 
+//!
 //! ```
 //! use smcrypto::sm2;
 //! // Step 1
@@ -67,9 +67,9 @@
 //! assert_eq!(ka.k, kb.k);
 //! assert_eq!(ka.s12, kb.s12);
 //! ```
-//! 
+//!
 //! ### SM4 ECB Encrypt/Decrypt
-//! 
+//!
 //! ```
 //! use smcrypto::sm4;
 //! let key = b"1234567812345678";
@@ -78,9 +78,9 @@
 //! let dec_ecb = sm4_ecb.decrypt_ecb(&enc_ecb);
 //! assert_eq!(String::from_utf8(dec_ecb).unwrap(), "abc");
 //! ```
-//! 
+//!
 //! ### SM4 CBC Encrypt/Decrypt
-//! 
+//!
 //! ```
 //! use smcrypto::sm4;
 //! let key = b"1234567812345678";

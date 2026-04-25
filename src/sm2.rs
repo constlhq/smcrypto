@@ -1,4 +1,5 @@
 use crate::sm3::Sm3;
+use crypto_common::Output;
 use digest::Digest;
 use hex::ToHex;
 use num_bigint::BigUint;
@@ -769,14 +770,14 @@ fn keyexchange_raw(
         &hash
     );
     // let s1 = sm3_hash(&h2);
-    let s1:String = Sm3::digest(&h2).as_slice().encode_hex();
+    let s1: String = Sm3::digest(&h2).as_slice().encode_hex();
     let h3 = concat_vec!(
         &hex::decode("03").unwrap(),
         &BigUint::to_bytes_be(&vy),
         &hex::decode(&s1).unwrap()
     );
     // let s2 = sm3_hash(&h3);
-    let s2:String = Sm3::digest(&h3).as_slice().encode_hex();
+    let s2: String = Sm3::digest(&h3).as_slice().encode_hex();
     KeyExchangeResult {
         k: hex::encode(kdf(&z, klen)),
         s12: yasna::construct_der(|writer| {
@@ -984,6 +985,14 @@ impl<'a> Sign<'a> {
     pub fn sign_to_file(&self, data: &[u8], sign_file: &str) {
         sign_to_file(self.id, data, sign_file, self.private_key)
     }
+
+    pub fn pre_sign(data: &[u8], public_key: &str) -> Output<Sm3> {
+        let m_bar = concat_vec(
+            &hex::decode(zab(&public_key, b"1234567812345678")).unwrap(),
+            data,
+        );
+        Sm3::digest(&m_bar)
+    }
 }
 
 pub struct Verify<'a> {
@@ -1030,6 +1039,14 @@ impl<'a> Verify<'a> {
 
     pub fn verify_from_file(&self, data: &[u8], sign_file: &str) -> bool {
         verify_from_file(self.id, data, sign_file, &self.public_key)
+    }
+
+    pub fn pre_verify(data: &[u8], public_key: &str) -> Output<Sm3> {
+        let m_bar = concat_vec(
+            &hex::decode(zab(&public_key, b"1234567812345678")).unwrap(),
+            data,
+        );
+        Sm3::digest(&m_bar)
     }
 }
 
