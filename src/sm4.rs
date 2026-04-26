@@ -186,6 +186,22 @@ fn decrypt_ecb(input_data: &[u8], key: &[u8]) -> Vec<u8> {
     unpadding(output_data)
 }
 
+fn decrypt_ecb_no_padding(input_data: &[u8], key: &[u8]) -> Vec<u8> {
+    let sk = set_key(key, true);
+    let mut length = input_data.len();
+    let mut i = 0;
+    let mut output_data: Vec<u8> = vec![];
+    while length > 0 {
+        output_data.append(&mut encrypt_block(
+            sk.to_owned(),
+            input_data[i..(i + 16)].to_vec(),
+        ));
+        i += 16;
+        length -= 16;
+    }
+    output_data
+}
+
 fn decrypt_ecb_base64(input_data: &str, key: &[u8]) -> Vec<u8> {
     decrypt_ecb(&base64::decode(input_data).unwrap(), key)
 }
@@ -327,7 +343,6 @@ impl<'a> CryptSM4ECB<'a> {
     pub fn encrypt_ecb(&self, input_data: &[u8]) -> Vec<u8> {
         encrypt_ecb(input_data, self.key)
     }
-
 
     pub fn encrypt_ecb_no_padding(&self, input_data: &[u8]) -> Vec<u8> {
         encrypt_ecb_no_padding(input_data, self.key)
