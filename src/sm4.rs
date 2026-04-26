@@ -360,6 +360,9 @@ impl<'a> CryptSM4ECB<'a> {
         decrypt_ecb(input_data, self.key)
     }
 
+    pub fn decrypt_ecb_no_padding(&self, input_data: &[u8]) -> Vec<u8> {
+        decrypt_ecb_no_padding(input_data, self.key)
+    }
     pub fn decrypt_ecb_base64(&self, input_data: &str) -> Vec<u8> {
         decrypt_ecb_base64(input_data, self.key)
     }
